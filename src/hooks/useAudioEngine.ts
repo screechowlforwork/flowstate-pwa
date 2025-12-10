@@ -5,6 +5,11 @@ export type SoundMode = 'rain' | 'wind' | 'waves';
 
 const FADE_TIME = 0.5; // seconds for crossfade and on/off
 
+// Very short silent MP3 (base64 data URI) used to wake iOS audio in PWA standalone mode
+// This is effectively inaudible but forces iOS to promote the audio session to "playback".
+const SILENT_MP3_DATA_URI =
+  'data:audio/mp3;base64,SUQzAwAAAAAAFlRFTkMAAAAwAAAACAAADSBNb3ZlAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
 function createNoiseBuffer(
   context: AudioContext,
   type: 'white' | 'pink' | 'brown',
@@ -416,8 +421,18 @@ export function useAudioEngine() {
   // Global first-gesture unlock for iOS Safari (touchstart + click)
   useEffect(() => {
     const unlockHandler = () => {
-      const ctx = audioCtxRef.current ?? audioCtxRef.current ?? undefined;
-      // Use helper to create/resume context lazily
+      // 1) HTML5 silent audio hack for iOS PWA standalone
+      try {
+        const silentAudio = new Audio(SILENT_MP3_DATA_URI);
+        silentAudio.loop = false;
+        silentAudio.volume = 0.01;
+        // Fire and forget – if this fails, we still attempt Web Audio resume below
+        void silentAudio.play();
+      } catch {
+        // ignore
+      }
+
+      // 2) Use helper to create/resume Web Audio context lazily
       resumeContextIfNeeded();
 
       // Remove listeners after first successful gesture
