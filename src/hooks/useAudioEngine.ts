@@ -97,6 +97,18 @@ export function useAudioEngine() {
     return audioCtxRef.current!;
   };
 
+  // Attempt to resume AudioContext, used for iOS autoplay unlock
+  const resumeContextIfNeeded = () => {
+    const ctx = ensureContext();
+    if (ctx.state === 'suspended') {
+      // Fire and forget; iOS requires this to be called in a user gesture handler
+      ctx.resume().catch(() => {
+        // ignore
+      });
+    }
+    return ctx;
+  };
+
   const stopModeNodes = (
     nodes: ModeNodes | null,
     ctx: AudioContext,
@@ -307,7 +319,7 @@ export function useAudioEngine() {
   };
 
   const startMode = (newMode: SoundMode) => {
-    const ctx = ensureContext();
+    const ctx = resumeContextIfNeeded();
     const now = ctx.currentTime;
 
     if (ctx.state === 'suspended') {
@@ -353,6 +365,8 @@ export function useAudioEngine() {
   const setEnabled = (on: boolean) => {
     setEnabledState(on);
     if (on) {
+      // Ensure context is unlocked before starting sound
+      resumeContextIfNeeded();
       startMode(mode);
     } else {
       stopAll();
@@ -396,6 +410,27 @@ export function useAudioEngine() {
       if (audioCtxRef.current) {
         audioCtxRef.current.close();
       }
+    };
+  }, []);
+
+  // Global first-gesture unlock for iOS Safari (touchstart + click)
+  useEffect(() => {
+    const unlockHandler = () => {
+      const ctx = audioCtxRef.current ?? audioCtxRef.current ?? undefined;
+      // Use helper to create/resume context lazily
+      resumeContextIfNeeded();
+
+      // Remove listeners after first successful gesture
+      window.removeEventListener('touchstart', unlockHandler);
+      window.removeEventListener('click', unlockHandler);
+    };
+
+    window.addEventListener('touchstart', unlockHandler, { passive: true });
+    window.addEventListener('click', unlockHandler, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', unlockHandler);
+      window.removeEventListener('click', unlockHandler);
     };
   }, []);
 
